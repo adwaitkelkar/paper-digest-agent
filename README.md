@@ -1,6 +1,6 @@
-# Weekly AI Paper Digest Agent
+# Weekly AI Research Paper Digest Agent
 
-An autonomous agent that runs every Sunday, reads Hugging Face's "Daily Papers"
+An autonomous agent that runs every Sunday, reads Hugging Face's "Daily Research Papers"
 feed, picks 2 papers using a
 rule-based + randomized editorial policy, writes a detailed plain-English
 explanation of each using Claude, and publishes them as pages in a Notion
