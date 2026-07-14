@@ -1,0 +1,106 @@
+# Weekly AI Paper Digest Agent
+
+An autonomous agent that runs every Sunday, reads Hugging Face's "Daily Papers"
+feed (curated by AK and the research community), picks 2 papers using a
+rule-based + randomized editorial policy, writes a detailed plain-English
+explanation of each using Claude, and publishes them as pages in a Notion
+workspace. No human in the loop.
+
+## Why this exists
+
+This is a small, self-contained demonstration of an agentic pipeline: it
+combines web research, a deterministic + LLM-assisted decision rule, structured
+LLM synthesis grounded strictly in source material, and an external-tool write
+action (Notion), running unattended on a schedule.
+
+## Pipeline
+
+```
+fetch_papers.py    -> pull this week's papers from huggingface.co/papers
+select_papers.py   -> shortlist by upvotes, classify CV/vision papers with
+                       Claude, apply the CV-preference + random selection rule
+summarize.py        -> fetch full abstracts, ask Claude for a structured,
+                       plain-English write-up per paper (grounded in the
+                       abstract only -- no fabricated numbers/mechanisms)
+notion_publish.py   -> convert each write-up to Notion blocks and create a
+                       standalone page under a configured parent page
+main.py             -> orchestrates the above, prints a run summary
+```
+
+## Selection rule
+
+1. Rank the week's papers by upvotes; take the top `SHORTLIST_SIZE` (default 15)
+   as the shortlist.
+2. Ask Claude to flag which shortlisted papers are computer-vision /
+   vision-language papers (broadly defined -- any paper whose input or output
+   involves images or video: detection, segmentation, 3D, image/video
+   generation, VLMs, embodied/video world models, OCR, etc.).
+3. If at least one CV paper is on the shortlist, the highest-upvoted one is
+   **guaranteed** a slot in the digest.
+4. The remaining slot (or both slots, if no CV paper qualifies) is filled by
+   **true random sampling** from the rest of the shortlist.
+
+This mirrors an editorial policy you might actually want on a real team feed:
+always cover the team's focus area (here, computer vision), but don't let the
+"AI pick" default to the single most-upvoted paper every single week.
+
+## Write-up structure
+
+Each paper gets a Notion page with:
+
+- A link to the paper, its arXiv ID, the ISO week, and which selection method
+  (CV-preference or random) picked it
+- **The Problem** -- what exactly the paper solves, and in what setting
+- **Why It Needed Solving** -- the motivation
+- **The Core Idea / Method** -- the most detailed section: how the method
+  actually works, step by step
+- **Outcomes** -- concrete results/benchmarks, only if stated in the abstract
+- **Drawbacks** -- limitations, self-reported-benchmark caveats, open questions
+
+The prompt explicitly forbids inventing facts not supported by the abstract.
+
+## Setup
+
+1. Clone this repo.
+2. `pip install -r requirements.txt`
+3. Copy `.env.example` to `.env` and fill in:
+   - `ANTHROPIC_API_KEY` -- from [console.anthropic.com](https://console.anthropic.com/)
+   - `NOTION_TOKEN` -- create an internal integration at
+     [notion.so/my-integrations](https://www.notion.so/my-integrations), then
+     share your target Notion page with that integration
+   - `NOTION_PARENT_PAGE_ID` -- the Notion page new paper pages will be created under
+4. Test locally without posting to Notion:
+   ```
+   python src/main.py --dry-run
+   ```
+5. Test the full pipeline (this will create real Notion pages):
+   ```
+   python src/main.py
+   ```
+
+## Deploying on a schedule (GitHub Actions, free)
+
+1. Push this repo to GitHub.
+2. In the repo's Settings -> Secrets and variables -> Actions, add:
+   `ANTHROPIC_API_KEY`, `NOTION_TOKEN`, `NOTION_PARENT_PAGE_ID`.
+3. That's it -- `.github/workflows/weekly_digest.yml` runs every Sunday at
+   09:00 UTC (edit the cron expression to change the time/day), and can also
+   be triggered manually from the Actions tab (`workflow_dispatch`).
+
+No server to maintain -- GitHub Actions' free tier covers a weekly job easily.
+
+## Design notes / limitations
+
+- Hugging Face's weekly archive page (`/papers/week/{ISO-week}`) is the
+  primary source; if it's unavailable or thin (e.g. for the current,
+  still-in-progress week), the fetcher falls back to unioning the individual
+  daily pages for that ISO week.
+- Upvotes are used as a proxy for "substantive contribution" when building the
+  shortlist -- low-effort submissions rarely accumulate votes on HF Papers,
+  but this is a heuristic, not a guarantee.
+- The CV/vision-language classification is done by Claude from titles only
+  (fast, cheap, and titles are almost always sufficient to tell) -- edge cases
+  are possible.
+- All factual claims in the write-ups are constrained to what's stated in the
+  paper's abstract and any community note; the model is instructed to say so
+  explicitly when a detail isn't available rather than guess.
